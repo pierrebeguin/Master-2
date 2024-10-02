@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+# # importer data + séparation
+
 # In[1]:
 
 
@@ -17,25 +19,22 @@ data = pd.read_csv(StringIO(response.text), sep=",")
 # Changer les 'no' par '0' et les 'yes' par '1'
 data['BloodCulture'] = data['BloodCulture'].replace({'no': 0, 'yes': 1})
 
-data.head()
+display(data.head())
+
+# exploration des données
+
+data['BloodCulture'].value_counts()
+
+# -> 10 fois plus de résultats négatif que de résultats positif
 
 
-# In[3]:
+# In[2]:
 
 
-# définir X et y
+# définir X et y (features et labels)
 
 X = data.drop(columns=['ID','BloodCulture'])
 y = data[['BloodCulture']]
-
-# vérifier que x et y fonctionne
-
-display(X.head())
-display(y.head())
-
-
-# In[4]:
-
 
 # Séparation des données en 2
 
@@ -54,8 +53,16 @@ print('taille du test :')
 print('taille de X_test = ',X_test.shape)
 print('taille de y_test = ',y_test.shape)
 
+import sklearn
+import imblearn
+! pip uninstall scikit-learn imbalanced-learn
+! pip install scikit-learn imbalanced-learn
 
-# In[7]:
+# Gestion du déséquilibre des classes
+from imblearn.over_sampling import SMOTE
+smote = SMOTE()
+X_resampled, y_resampled = smote.fit_resample(X, y)
+# In[3]:
 
 
 # Gérer les valeurs manquantes
@@ -64,81 +71,133 @@ X_test.fillna(X_test.mean(), inplace=True)
 
 # vérifier qu'il n'y a plus de valeur manquante
 
-X_train.isna().sum()
-X_test.isna().sum()
+#X_train.isna().sum()
+#X_test.isna().sum()
 
-
-# In[11]:
-
-
-import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
+# Standardiser les données
 from sklearn.preprocessing import StandardScaler
 
-# Normalisation des données
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-# Créer et entraîner le modèle
-model = KNeighborsClassifier(n_neighbors=1)
-model.fit(X_train_scaled, y_train)
 
-# Évaluer le modèle
-print('Train score:', model.score(X_train_scaled, y_train))
-print('Test score:', model.score(X_test_scaled, y_test))
+# # Modèle
+
+# In[4]:
 
 
-# In[11]:
+import warnings
+from sklearn.exceptions import DataConversionWarning
+warnings.filterwarnings("ignore", category=DataConversionWarning)
+
+# Modèle régression logistique
+from sklearn.linear_model import LogisticRegression
+lg_model = LogisticRegression()
+lg_model.fit(X_train_scaled, y_train)
 
 
-# Convertir les tableaux NumPy en DataFrame
-X_train_scaled_df = pd.DataFrame(X_train_scaled, columns=X.columns)
-X_test_scaled_df = pd.DataFrame(X_test_scaled, columns=X.columns) 
+# Modèle K-Nearest Neighbors
+from sklearn.neighbors import KNeighborsClassifier
+knn_model = KNeighborsClassifier(n_neighbors=5)  # Choisir le nombre de voisins
+knn_model.fit(X_train_scaled, y_train)
 
-# Afficher X_train après standardisation
-print('X_train après standardisation :')
-display(X_train_scaled_df)
 
-# Afficher X_test après standardisation
-print('X_test après standardisation :')
-display(X_test_scaled_df)
+# Modèle Support Vector Machine
+from sklearn.svm import SVC
+svm_model = SVC(kernel='rbf', probability=True)  # Utilisation du noyau radial
+svm_model.fit(X_train_scaled, y_train)
+
+
+# Modèle forêts aléatoires
+from sklearn.ensemble import RandomForestClassifier
+rf_model = RandomForestClassifier()
+rf_model.fit(X_train_scaled, y_train)
+
+
+# Modèle Gradient Boosting
+from sklearn.ensemble import GradientBoostingClassifier
+gb_model = GradientBoostingClassifier()
+gb_model.fit(X_train_scaled, y_train)
+
+
+# Modèle Réseau de Neurones (MLP)
+from sklearn.neural_network import MLPClassifier
+nn_model = MLPClassifier(max_iter=500)  # Nombre d'itérations
+nn_model.fit(X_train_scaled, y_train)
+
+
+# # évaluation des modèles
+
+# In[5]:
+
+
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+
+# Évaluation des modèles
+models = {
+    "Régression Logistique": lg_model,
+    "K-Nearest Neighbors": knn_model,
+    "Support Vector Machine": svm_model,
+    "Forêts Aléatoires": rf_model,
+    "Gradient Boosting": gb_model,
+    "Réseau de Neurones": nn_model
+}
+
+# Boucle pour évaluer chaque modèle
+for model_name, model in models.items():
+    # Prédictions sur l'ensemble de test
+    y_pred = model.predict(X_test_scaled)
+    
+    # Évaluation
+    print(f"\nÉvaluation du modèle : {model_name}")
+    print("Accuracy:", accuracy_score(y_test, y_pred))
+    print("Matrice de Confusion:\n", confusion_matrix(y_test, y_pred))
+    print("Rapport de Classification:\n", classification_report(y_test, y_pred))
+
+
+# # courbe ROC
+
+# In[6]:
+
+
+# Importation des bibliothèques nécessaires
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
+
+# Initialisation du graphique
+plt.figure(figsize=(10, 8))
+
+# Boucle pour évaluer chaque modèle
+for model_name, model in models.items():
+    # Prédictions de probabilité sur l'ensemble de test
+    y_prob = model.predict_proba(X_test_scaled)[:, 1]  # Probabilité de la classe positive
+
+    # Calcul de la courbe ROC
+    fpr, tpr, _ = roc_curve(y_test, y_prob)  # FPR: Taux de faux positifs, TPR: Taux de vrais positifs
+    roc_auc = auc(fpr, tpr)  # Calcul de l'AUC
+
+    # Tracé de la courbe ROC
+    plt.plot(fpr, tpr, label=f'{model_name} (AUC = {roc_auc:.2f})')
+
+# Tracer la ligne de chance
+plt.plot([0, 1], [0, 1], 'k--', label='AUC = 0.5 (Chance)')
+
+# Étiquetage des axes
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('Taux de Faux Positifs (FPR)')
+plt.ylabel('Taux de Vrais Positifs (TPR)')
+plt.title('Courbes ROC des Modèles')
+plt.legend(loc='lower right')
+plt.grid()
+plt.show()
 
 
 # In[ ]:
 
 
 
-
-
-# In[9]:
-
-
-from sklearn.linear_model import LogisticRegression
-import matplotlib.pyplot as plt
-
-X = X_train_scaled_df.values
-y = y_train
-
-# Créer le modèle de régression Logistic
-model = LogisticRegression()
-
-# Ajuster le modèle aux données
-model.fit(X, y)
-
-# Prédictions sur les données d'entraînement
-y_pred = model.predict(X)
-
-# Tracer le nuage de points avec la régression linéaire
-plt.figure(figsize=(10, 6))  # Ajuster la taille de la figure
-plt.scatter(y, y_pred, color='blue', alpha=0.5)  # Nuage de points
-plt.plot([y.min(), y.max()], [y.min(), y.max()], color='red', linestyle='--')
-plt.xlabel('y_train (réel)')
-plt.ylabel('y_pred (prédiction)')
-plt.title('Régression Logistic entre y_train et les variables indépendantes')
-plt.grid(True)
-plt.axis('equal')
-plt.show()
 
 
 # In[ ]:
